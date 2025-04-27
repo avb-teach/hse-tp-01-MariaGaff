@@ -1,6 +1,6 @@
 #!/bin/bash
 
-if [[ "$#" -lt 2 || "$#" -gt 3 ]] 
+if [[ "$#" -lt 2 || "$#" -gt 3 ]]
 then
     echo "Ошибка: необходимы две директории (входная и выходная)"
     exit 1
@@ -10,20 +10,34 @@ max_depth=0
 input_dir=""
 output_dir=""
 
-for arg in "$@"; do
-    if [[ "$arg" == "--max_depth" ]]
-    then
-        max_depth="$2"
-        shift
-
-    elif [[ -z "$input_dir" ]]
-    then
-        input_dir="$arg"
-
-    elif [[ -z "$output_dir" ]]
-    then
-        output_dir="$arg"
-    fi
+while [[ "$#" -gt 0 ]]
+do
+    case "$1" in
+        --max_depth)
+            shift
+            if [[ -n "$1" && "$1" =~ ^[0-9]+$ ]]
+            then
+                max_depth="$1"
+                shift
+            else
+                echo "Ошибка: необходимо указать целое число после --max_depth"
+                exit 1
+            fi
+            ;;
+        *)
+            if [[ -z "$input_dir" ]]
+            then
+                input_dir="$1"
+            elif [[ -z "$output_dir" ]]
+            then
+                output_dir="$1"
+            else
+                echo "Ошибка: слишком много аргументов"
+                exit 1
+            fi
+            shift
+            ;;
+    esac
 done
 
 if [ ! -d "$input_dir" ]
@@ -34,7 +48,7 @@ fi
 
 if [ ! -d "$output_dir" ]
 then 
-    mkdir -p "$output_dir"
+    mkdir -p "$output_dir" || { echo "Ошибка: не удалось создать выходную директорию"; exit 1; }
 fi
 
 current_depth=0
@@ -57,7 +71,7 @@ copy_files() {
                 ((counter++))
             done
 
-            cp "$file" "$new_file"
+            cp "$file" "$new_file" || { echo "Ошибка при копировании файла $file"; }
         fi
     done
 
