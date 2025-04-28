@@ -1,86 +1,72 @@
 #!/bin/bash
 
-set -euo pipefail
-
-APP_NAME=$(basename "$0")
-
-usage() {
-    echo "Usage: ${APP_NAME} <input_directory> <output_directory>"
-    echo "Copies all files from <input_directory> (and its subdirectories) into <output_directory>,"
-    echo "flattening the directory structure."
-    echo "Duplicate filenames will be renamed with a suffix like '(1)', '(2)', etc."
-}
-
-if [[ "$#" -ne 2 ]]; then
-    echo "Ошибка: Неверное количество аргументов." >&2 
-    usage
+if [[ "$#" -lt 2 ]]; then
+    echo "Ошибка: требуется указать входную и выходную директории."
     exit 1
 fi
 
 input_directory="$1"
 output_directory="$2"
+max_depth=0
+max_depth_enabled=false
 
-if [[ ! -d "$input_directory" ]]; then
-    echo "Ошибка: Входная директория '$input_directory' не найдена или не является директорией." >&2
-    exit 1
-fi
-
-mkdir -p "$output_directory" || {
-    echo "Ошибка: Не удалось создать выходную директорию '$output_directory'." >&2
-    exit 1
-}
-
-if [[ ! -w "$output_directory" ]]; then
-    echo "Ошибка: Выходная директория '$output_directory' не доступна для записи." >&2
-    exit 1
-fi
-
-echo "Поиск файлов в '$input_directory'..."
-
-declare -A file_counts
-
-process_file() {
-    local src="$1"
-    local base_name=$(basename "$src")
-    local target_path="$output_directory/$base_name"
-    local name_part="${base_name%.*}"
-    local ext_part=""
-    
-    if [[ "$base_name" =~ ^..*\..+$ ]]; then
-        ext_part=".${base_name##*.}"
+if [[ "$#" -ge 4 && "$3" == "--max_depth" ]]; then
+    if [[ "$4" =~ ^[0-9]+$ ]]; then
+        max_depth="$4"
+        max_depth_enabled=true
     else
-        name_part="$base_name"
+        echo "Ошибка: глубина должна быть числом."
+        exit 1
     fi
+fi
 
-    if [[ -e "$target_path" ]]; then
-        echo "Обнаружен конфликт имен для '$base_name'. Поиск уникального имени..."
-        local counter=${file_counts["$base_name"]:-1}
-        
-        while true; do
-            new_target_path="${output_directory}/${name_part}(${counter})${ext_part}"
-            if [[ ! -e "$new_target_path" ]]; then
-                target_path="$new_target_path"
-                echo "  -> Новое имя: '$(basename "$target_path")'"
-                file_counts["$base_name"]=$((counter + 1))
-                break
-            fi
-            ((counter++))
+if [ ! -d "$input_directory" ]; then
+    echo "Ошибка: входная директория не найдена."
+    exit 1
+fi
+
+if [ ! -d "$output_directory" ]; then
+    mkdir -p "$output_directory"
+fi
+
+find_args=("find" "$input_directory" -mindepth 1 -type f -print0)
+
+while IFS= read -r -d $'\0' current_file; do
+    relative_path="${current_file#"$input_directory"/}"
+    IFS='/' read -r -a path_segments <<< "$relative_path"
+    depth="${#path_segments[@]}"
+
+    if $max_depth_enabled && [ "$depth" -gt "$max_depth" ]; then
+        flattened_name=""
+        for ((i=max_depth; i<depth; i++)); do
+            flattened_name+="${path_segments[i]}_"
         done
-    else
-        file_counts["$base_name"]=1
+        flattened_name="${flattened_name%_}"
+
+        truncated_path=""
+        for ((i=0; i<max_depth; i++)); do
+            truncated_path+="${path_segments[i]}/"
+        done
+        truncated_path="${truncated_path%/}"  
+
+        relative_path="$truncated_path/$flattened_name"
     fi
-    
-    echo "Копирование '$src' -> '$target_path'"
-    cp -- "$src" "$target_path" || {
-        echo "Ошибка: Не удалось скопировать '$src'" >&2
-        return 1
-    }
-}
 
-while IFS= read -r -d $'\0' file; do
-    process_file "$file"
-done < <(find "$input_directory" -type f -print0)
+    destination_file="$output_directory/$relative_path"
 
-echo "----------------------------------------"
-echo "Все файлы успешно скопированы в '$output_directory'."
-exit 0
+    mkdir -p "$(dirname "$destination_file")"
+
+    index=1
+    base_name="${destination_file%.*}"
+    extension="${destination_file##*.}"
+
+    while [[ -e "$destination_file" ]]; do
+        destination_file="${base_name}($index).${extension}"
+        ((index++))
+    done
+
+    cp "$current_file" "$destination_file"
+
+done < <("${find_args[@]}" )
+
+echo "Все файлы скопированы в $output_directory."
