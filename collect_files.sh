@@ -1,72 +1,83 @@
 #!/bin/bash
 
-if [[ "$#" -lt 2 || "$#" -gt 3 ]]
+if [[ "$#" -lt 2 || "$#" -gt 2 ]] 
 then
     echo "Ошибка: необходимы две директории (входная и выходная)"
     exit 1
 fi
 
-max_depth=0
-input_dir=""
-output_dir=""
+input_dir="${1%/}"
+output_dir="${2%/}"
+max_depth="$3"
 
-while [[ "$#" -gt 0 ]]
-do
-    case "$1" in
-        --max_depth)
-            shift
-            if [[ -n "$1" && "$1" =~ ^[0-9]+$ ]]
-            then
-                max_depth="$1"
-                shift
-            else
-                echo "Ошибка: необходимо указать целое число после --max_depth"
-                exit 1
-            fi
-            ;;
-        *)
-            if [[ -z "$input_dir" ]]
-            then
-                input_dir="$1"
-            elif [[ -z "$output_dir" ]]
-            then
-                output_dir="$1"
-            else
-                echo "Ошибка: слишком много аргументов"
-                exit 1
-            fi
-            shift
-            ;;
-    esac
-done
-
-if [ ! -d "$input_dir" ]
+if [[ ! -d "$input_dir" ]] 
 then
-    echo "Ошибка: не существует входной директории"
+    echo "Ошибка: входная директория не найдена"
     exit 1
 fi
 
-if [ ! -d "$output_dir" ]
-then 
-    mkdir -p "$output_dir" || { echo "Ошибка: не удалось создать выходную директорию"; exit 1; }
+if ! [[ "$max_depth" =~ ^[0-9]+$ ]]
+then
+    echo "Ошибка: max_depth должен быть целым неотрицательным"
+    exit 1
 fi
 
-find_cmd="find \"$input_dir\" -type f"
-if [[ $max_depth -gt 0 ]]; then
-    find_cmd+=" -maxdepth $max_depth"
+mkdir -p "$output_dir"
+
+max_dirs=$((max_depth - 1))
+if (( max_dirs < 0 ))
+then
+    max_dirs=0
 fi
 
-eval "$find_cmd" | while read -r file
+find "$input_dir" -type f | while IFS= read -r file
 do
     base=$(basename "$file")
-    new_file="$output_dir/$base"
-    counter=1
+    rel="${file#$input_dir/}"
+    dirpath=$(dirname "$rel")
 
+    if [[ "$dirpath" == "." ]] 
+    then
+        N=0
+        segments=()
+    else
+        IFS='/' read -r -a segments <<< "$dirpath"
+        N=${#segments[@]}
+    fi
+
+    if (( N <= max_dirs ))
+    then
+        new_rel_dir="$dirpath"
+    else
+        start=$(( N - max_dirs ))
+        if (( max_dirs > 0 ))
+        then
+            tail=( "${segments[@]:start:max_dirs}" )
+            new_rel_dir="${tail[*]// /\/}"
+        else
+            new_rel_dir=""
+        fi
+    fi
+
+    if [[ -n "$new_rel_dir" && "$new_rel_dir" != "." ]]
+    then
+        dest_dir="$output_dir/$new_rel_dir"
+    else
+        dest_dir="$output_dir"
+    fi
+
+    mkdir -p "$dest_dir"
+
+    ext="${base##*.}"
+    name="${base%.*}"
+    new_file="$dest_dir/$base"
+    counter=1
+    
     while [[ -e "$new_file" ]]
     do
-        new_file="${output_dir}/${base%.*}_${counter}.${base##*.}"
+        new_file="$dest_dir/${name}($counter).$ext"
         ((counter++))
     done
 
-    cp "$file" "$new_file" || { echo "Ошибка при копировании файла $file"; }
+    cp "$file" "$new_file"
 done
