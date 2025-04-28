@@ -1,7 +1,6 @@
- #!/bin/bash
+#!/bin/bash
 
-set -e
-set -o pipefail
+set -euo pipefail
 
 APP_NAME=$(basename "$0")
 
@@ -20,16 +19,17 @@ fi
 
 input_directory="$1"
 output_directory="$2"
+
 if [[ ! -d "$input_directory" ]]; then
     echo "Ошибка: Входная директория '$input_directory' не найдена или не является директорией." >&2
     exit 1
 fi
 
-mkdir -p "$output_directory"
-if [[ ! -d "$output_directory" ]]; then
+mkdir -p "$output_directory" || {
     echo "Ошибка: Не удалось создать выходную директорию '$output_directory'." >&2
     exit 1
-fi
+}
+
 if [[ ! -w "$output_directory" ]]; then
     echo "Ошибка: Выходная директория '$output_directory' не доступна для записи." >&2
     exit 1
@@ -37,41 +37,49 @@ fi
 
 echo "Поиск файлов в '$input_directory'..."
 
-find "$input_directory" -type f -print0 | while IFS= read -r -d $'\0' current_file; do
-    base_name=$(basename "$current_file")
+declare -A file_counts
 
-    target_path="$output_directory/$base_name"
+process_file() {
+    local src="$1"
+    local base_name=$(basename "$src")
+    local target_path="$output_directory/$base_name"
+    local name_part="${base_name%.*}"
+    local ext_part=""
+    
+    if [[ "$base_name" =~ ^..*\..+$ ]]; then
+        ext_part=".${base_name##*.}"
+    else
+        name_part="$base_name"
+    fi
 
     if [[ -e "$target_path" ]]; then
         echo "Обнаружен конфликт имен для '$base_name'. Поиск уникального имени..."
-        counter=1
-        name_part="${base_name%.*}"
-        if [[ "$base_name" == *.* && "$base_name" != "$name_part" ]]; then
-             ext_part=".${base_name##*.}"
-        else
-             name_part="$base_name"
-             ext_part=""
-        fi
-
+        local counter=${file_counts["$base_name"]:-1}
+        
         while true; do
             new_target_path="${output_directory}/${name_part}(${counter})${ext_part}"
             if [[ ! -e "$new_target_path" ]]; then
                 target_path="$new_target_path"
                 echo "  -> Новое имя: '$(basename "$target_path")'"
-                break 
+                file_counts["$base_name"]=$((counter + 1))
+                break
             fi
             ((counter++))
-            if [[ "$counter" -gt 9999 ]]; then
-                 echo "Ошибка: Не удалось найти уникальное имя для '$base_name' после $counter попыток." >&2
-                 continue 2 
-            fi
         done
+    else
+        file_counts["$base_name"]=1
     fi
     
-    echo "Копирование '$current_file' -> '$target_path'"
-    cp "$current_file" "$target_path"
+    echo "Копирование '$src' -> '$target_path'"
+    cp -- "$src" "$target_path" || {
+        echo "Ошибка: Не удалось скопировать '$src'" >&2
+        return 1
+    }
+}
 
-done
+while IFS= read -r -d $'\0' file; do
+    process_file "$file"
+done < <(find "$input_directory" -type f -print0)
 
 echo "----------------------------------------"
 echo "Все файлы успешно скопированы в '$output_directory'."
