@@ -26,13 +26,13 @@ then
     mkdir -p "$output_directory"
 fi
 
-find_command="find \"$input_directory\" -mindepth 1 -type f"
+find_args=("find" "$input_directory" -mindepth 1 -type f)
 if [ "$max_depth" -gt 0 ]
 then
-    find_command+=" -maxdepth $max_depth"
+    find_args+=("-maxdepth" "$max_depth")
 fi
 
-eval "$find_command" | while IFS= read -r current_file
+while IFS= read -r current_file
 do
     relative_path="${current_file#"$input_directory"/}"
     destination_file="$output_directory/$relative_path"
@@ -50,6 +50,6 @@ do
     done
 
     cp "$current_file" "$destination_file"
-done
+done < <("${find_args[@]}" )
 
-echo "Все файлы скопированы в $output_directory."
+echo "Все файлы успешно скопированы в $output_directory."
