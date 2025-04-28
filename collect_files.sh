@@ -1,13 +1,13 @@
 #!/bin/bash
 
-max_depth=3
+max_depth=0 
+input_dir=""
+output_dir=""
 
-POSITIONAL=()
 while [[ $# -gt 0 ]]; do
     case "$1" in
         -m|--max_depth)
-            if [[ -n "$2" && "$2" =~ ^[0-9]+$ ]]
-            then
+            if [[ -n "$2" && "$2" =~ ^[0-9]+$ ]]; then
                 max_depth="$2"
                 shift 2
             else
@@ -17,91 +17,69 @@ while [[ $# -gt 0 ]]; do
             ;;
         -*)
             echo "Неизвестная опция: $1" >&2
-            echo "Использование: $0 [--max_depth N] INPUT_DIR [OUTPUT_DIR]" >&2
+            echo "Использование: $0 [--max_depth N] INPUT_DIR OUTPUT_DIR" >&2
             exit 1
             ;;
         *)
-            POSITIONAL+=("$1")
+            if [[ -z "$input_dir" ]]; then
+                input_dir="${1%/}"
+            elif [[ -z "$output_dir" ]]; then
+                output_dir="${1%/}"
+            else
+                echo "Ошибка: слишком много аргументов" >&2
+                exit 1
+            fi
             shift
             ;;
     esac
 done
 
-set -- "${POSITIONAL[@]}"
-
-if [[ $# -lt 1 || $# -gt 2 ]]
-then
-    echo "Ошибка: нужно указать INPUT_DIR и необязательно OUTPUT_DIR" >&2
-    echo "Использование: $0 [--max_depth N] INPUT_DIR [OUTPUT_DIR]" >&2
+if [[ -z "$input_dir" || -z "$output_dir" ]]; then
+    echo "Ошибка: нужно указать INPUT_DIR и OUTPUT_DIR" >&2
+    echo "Использование: $0 [--max_depth N] INPUT_DIR OUTPUT_DIR" >&2
     exit 1
 fi
 
-input_dir="${1%/}"
-if [[ $# -eq 2 ]] 
-then
-    output_dir="${2%/}"
-else
-    output_dir="."
-fi
-
-if [[ ! -d "$input_dir" ]] 
-then
+if [[ ! -d "$input_dir" ]]; then
     echo "Ошибка: входная директория '$input_dir' не существует" >&2
     exit 1
 fi
 
-mkdir -p "$output_dir"
+mkdir -p "$output_dir" || {
+    echo "Ошибка: не удалось создать выходную директорию '$output_dir'" >&2
+    exit 1
+}
 
-max_dirs=$(( max_depth - 1 ))
-(( max_dirs < 0 )) && max_dirs=0
+find_cmd=("find" "$input_dir" "-type" "f")
+if [[ $max_depth -gt 0 ]]; then
+    find_cmd+=("-maxdepth" "$max_depth")
+fi
 
-find "$input_dir" -type f | while IFS= read -r file
-do
-    rel="${file#$input_dir/}"
-    dirpath=$(dirname "$rel")
-    base=$(basename "$rel")
-
-    if [[ "$dirpath" == "." ]]
-    then
-        segments=()
-    else
-        IFS='/' read -r -a segments <<< "$dirpath"
+"${find_cmd[@]}" | while IFS= read -r -d $'\n' file; do
+    filename=$(basename -- "$file")
+    extension="${filename##*.}"
+    name="${filename%.*}"
+    
+    if [[ "$filename" == "$extension" ]]; then
+        name="$filename"
+        extension=""
     fi
-    N=${#segments[@]}
-
-    if (( N <= max_dirs ))
-    then
-        new_rel_dir="$dirpath"
-    else
-        start=$(( N - max_dirs ))
-        if (( max_dirs > 0 )) 
-        then
-            tail=( "${segments[@]:start:max_dirs}" )
-            new_rel_dir="${tail[*]// /\/}"
-        else
-            new_rel_dir=""
-        fi
-    fi
-
-    if [[ -n "$new_rel_dir" && "$new_rel_dir" != "." ]] 
-    then
-        dest="$output_dir/$new_rel_dir"
-    else
-        dest="$output_dir"
-    fi
-    mkdir -p "$dest"
-
-    name="${base%.*}"
-    ext="${base##*.}"
-    dest_file="$dest/$base"
+    
+    target_file="$output_dir/$filename"
     counter=1
-    while [[ -e "$dest_file" ]] 
-    do
-        dest_file="$dest/${name}($counter).$ext"
+
+    while [[ -e "$target_file" ]]; do
+        if [[ -n "$extension" ]]; then
+            target_file="$output_dir/${name}_${counter}.${extension}"
+        else
+            target_file="$output_dir/${name}_${counter}"
+        fi
         ((counter++))
     done
 
-    cp "$file" "$dest_file"
+    cp -- "$file" "$target_file" || {
+        echo "Ошибка: не удалось скопировать $file" >&2
+    }
 done
 
 exit 0
