@@ -29,20 +29,17 @@ if [ ! -d "$output_directory" ]; then
     mkdir -p "$output_directory"
 fi
 
-find_args=("find" "$input_directory" -mindepth 1 -type f)
-
-if $max_depth_enabled; then
-    for i in $(seq $((max_depth + 1)) 1000); do  
-        find_args+=("!")
-        find_args+=("-path")
-        find_args+=("$(printf "$input_directory/*%${i}s")")
-    done
-fi
-
-find_args+=("-print0") 
+find_args=("find" "$input_directory" -mindepth 1 -type f -print0)
 
 while IFS= read -r -d $'\0' current_file; do
     relative_path="${current_file#"$input_directory"/}"
+    IFS='/' read -r -a path_segments <<< "$relative_path"
+    depth="${#path_segments[@]}"
+
+    if $max_depth_enabled && [ "$depth" -gt "$max_depth" ]; then
+        continue 
+    fi
+
     destination_file="$output_directory/$relative_path"
 
     mkdir -p "$(dirname "$destination_file")"
@@ -57,6 +54,7 @@ while IFS= read -r -d $'\0' current_file; do
     done
 
     cp "$current_file" "$destination_file"
+
 done < <("${find_args[@]}" )
 
 echo "Все файлы скопированы в $output_directory."
