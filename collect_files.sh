@@ -7,14 +7,17 @@ copy_files_recursive() {
   local max_depth="$4"
   local max_depth_enabled="$5"
 
-  if $max_depth_enabled && [ "$current_depth" -gt "$max_depth" ]; then
+  if $max_depth_enabled && [ "$current_depth" -gt "$max_depth" ]
+  then
     return
   fi
 
   mkdir -p "$output_dir"
 
-  for file in "$current_dir"/*; do
-    if [ -f "$file" ]; then
+  for file in "$current_dir"/*
+  do
+    if [ -f "$file" ]
+    then
       local relative_path="${file#"$input_directory"/}"
       local destination_file="$output_dir/$relative_path"
 
@@ -23,26 +26,32 @@ copy_files_recursive() {
       local index=1
       local base_name="${destination_file%.*}"
       local extension="${destination_file##*.}"
-      while [[ -e "$destination_file" ]]; do
+      while [[ -e "$destination_file" ]]
+      do
           destination_file="${base_name}($index).${extension}"
           ((index++))
       done
 
       cp "$file" "$destination_file"
+
+      echo "DEBUG: current_dir=$current_dir, file=$file, relative_path=$relative_path, destination_file=$destination_file, current_depth=$current_depth"
     fi
   done
 
-  for subdir in "$current_dir"/*; do
-    if [ -d "$subdir" ]; then
+  for subdir in "$current_dir"/*
+  do
+    if [ -d "$subdir" ]
+    then
       local next_depth=$((current_depth + 1))
-      local next_output_dir="$output_dir/$(basename "$subdir")" 
+      local next_output_dir="$output_dir"
       copy_files_recursive "$subdir" "$next_output_dir" "$next_depth" "$max_depth" "$max_depth_enabled"
     fi
   done
 }
 
 
-if [[ "$#" -lt 2 ]]; then
+if [[ "$#" -lt 2 ]]
+then
   echo "Ошибка: требуется указать входную и выходную директории."
   exit 1
 fi
@@ -52,7 +61,8 @@ output_directory="$2"
 max_depth=0
 max_depth_enabled=false
 
-if [[ "$#" -ge 4 && "$3" == "--max_depth" ]]; then
+if [[ "$#" -ge 4 && "$3" == "--max_depth" ]]
+then
   if [[ "$4" =~ ^[0-9]+$ ]]; then
     max_depth="$4"
     max_depth_enabled=true
