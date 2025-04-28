@@ -37,7 +37,19 @@ while IFS= read -r -d $'\0' current_file; do
     depth="${#path_segments[@]}"
 
     if $max_depth_enabled && [ "$depth" -gt "$max_depth" ]; then
-        continue 
+        flattened_name=""
+        for ((i=max_depth; i<depth; i++)); do
+            flattened_name+="${path_segments[i]}_"
+        done
+        flattened_name="${flattened_name%_}"
+
+        truncated_path=""
+        for ((i=0; i<max_depth; i++)); do
+            truncated_path+="${path_segments[i]}/"
+        done
+        truncated_path="${truncated_path%/}"  
+
+        relative_path="$truncated_path/$flattened_name"
     fi
 
     destination_file="$output_directory/$relative_path"
