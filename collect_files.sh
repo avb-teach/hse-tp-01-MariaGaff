@@ -51,13 +51,12 @@ then
     mkdir -p "$output_dir" || { echo "Ошибка: не удалось создать выходную директорию"; exit 1; }
 fi
 
-current_depth=0
-
 copy_files() {
     local dir="$1"
-    local depth="$2"
+    local current_depth="$2"
+    local effective_depth=$((current_depth + 1))  
 
-    for file in "$dir"/*
+    for file in "$dir"/* "$dir"/.[!.]* "$dir"/..?*  
     do
         if [ -f "$file" ]
         then
@@ -67,7 +66,7 @@ copy_files() {
 
             while [[ -e "$new_file" ]]
             do
-                new_file="${output_dir}/${base%.*}($counter).${base##*.}"
+                new_file="${output_dir}/${base%.*}_${counter}.${base##*.}"  
                 ((counter++))
             done
 
@@ -75,16 +74,16 @@ copy_files() {
         fi
     done
 
-    if [[ $depth -lt $max_depth ]] || [[ $max_depth -eq 0 ]]
+    if [[ $max_depth -eq 0 || $effective_depth -lt $max_depth ]]
     then
-        for subdir in "$dir"/*/
+        for subdir in "$dir"/*/ "$dir"/.[!.]*/ "$dir"/..?*/ 
         do
-            if [ -d "$subdir" ]
+            if [ -d "$subdir" ] && [ ! -L "$subdir" ]  
             then
-                copy_files "$subdir" $((depth + 1))
+                copy_files "$subdir" $effective_depth
             fi
         done
     fi
 }
 
-copy_files "$input_dir" $current_depth
+copy_files "$input_dir" 0
