@@ -1,65 +1,72 @@
 #!/bin/bash
 
-copy_files() {
-    local input_dir="$1"
-    local output_dir="$2"
-    local max_depth="$3"
+if [[ "$#" -lt 2 ]]; then
+    echo "Ошибка: требуется указать входную и выходную директории."
+    exit 1
+fi
 
-    find "$input_dir" -type f -print0 | while IFS= read -r -d $'\0' file; do
-        local rel_path="${file#"$input_dir/"}"
-        local depth=$(echo "$rel_path" | tr -d -c / | wc -c)
+input_directory="$1"
+output_directory="$2"
+max_depth=0
+max_depth_enabled=false
 
-        local dest_dir="$output_dir"
-        local dest_file=""
-
-        if [[ -n "$max_depth" ]] && (( depth > max_depth )); then
-            local dir_prefix=""
-            local filename=$(basename "$file")
-            local parent_dir=$(dirname "$rel_path")
-
-            local IFS='/' read -r -a path_parts <<< "$parent_dir"
-            local i=0
-            for part in "${path_parts[@]}"; do
-              ((i++))
-              if [[ $i -gt $max_depth ]]; then
-                dir_prefix+="${part}_"
-              fi
-            done
-
-            dest_file="${dir_prefix}${filename}"
-            local truncated_path=""
-            local i=0
-            for part in "${path_parts[@]}"; do
-              ((i++))
-              if [[ $i -le $max_depth ]]; then
-                truncated_path+="${part}/"
-              fi
-            done
-            truncated_path="${truncated_path%?}"
-            dest_dir="$output_dir/$truncated_path"
-
-        else
-            dest_file="$rel_path"
-        fi
-
-        mkdir -p "$dest_dir"
-        cp "$file" "$dest_dir/$dest_file"
-    done
-}
-
-input_dir="$1"
-output_dir="$2"
-max_depth=""
-
-if [[ "$#" -gt 2 ]]; then
-    if [[ "$3" == "--max_depth" ]] && [[ "$4" =~ ^[0-9]+$ ]]; then
+if [[ "$#" -ge 4 && "$3" == "--max_depth" ]]; then
+    if [[ "$4" =~ ^[0-9]+$ ]]; then
         max_depth="$4"
+        max_depth_enabled=true
     else
-        echo "Usage: $0 <input_dir> <output_dir> [--max_depth <depth>]"
+        echo "Ошибка: глубина должна быть числом."
         exit 1
     fi
 fi
 
-copy_files "$input_dir" "$output_dir" "$max_depth"
+if [ ! -d "$input_directory" ]; then
+    echo "Ошибка: входная директория не найдена."
+    exit 1
+fi
 
-echo "Копирование в  $output_dir завершено."
+if [ ! -d "$output_directory" ]; then
+    mkdir -p "$output_directory"
+fi
+
+find_args=("find" "$input_directory" -mindepth 1 -type f -print0)
+
+while IFS= read -r -d $'\0' current_file; do
+    relative_path="${current_file#"$input_directory"/}"
+    IFS='/' read -r -a path_segments <<< "$relative_path"
+    depth="${#path_segments[@]}"
+
+    if $max_depth_enabled && [ "$depth" -gt "$max_depth" ]; then
+        flattened_name=""
+        for ((i=max_depth; i<depth; i++)); do
+            flattened_name+="${path_segments[i]}_"
+        done
+        flattened_name="${flattened_name%_}"
+
+        truncated_path=""
+        for ((i=0; i<max_depth; i++)); do
+            truncated_path+="${path_segments[i]}/"
+        done
+        truncated_path="${truncated_path%/}"  
+
+        relative_path="$truncated_path/$flattened_name"
+    fi
+
+    destination_file="$output_directory/$relative_path"
+
+    mkdir -p "$(dirname "$destination_file")"
+
+    index=1
+    base_name="${destination_file%.*}"
+    extension="${destination_file##*.}"
+
+    while [[ -e "$destination_file" ]]; do
+        destination_file="${base_name}($index).${extension}"
+        ((index++))
+    done
+
+    cp "$current_file" "$destination_file"
+
+done < <("${find_args[@]}" )
+
+echo "Все файлы скопированы в $output_directory."
